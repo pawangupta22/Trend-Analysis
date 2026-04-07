@@ -1,82 +1,149 @@
 import streamlit as st
 import pandas as pd
+import matplotlib.pyplot as plt
 
-from sklearn.preprocessing import LabelEncoder, StandardScaler
-from sklearn.cluster import KMeans
-from sklearn.ensemble import RandomForestClassifier
+st.set_page_config(page_title="Trend Dashboard", layout="wide")
 
-st.title("Trend Prediction Dashboard")
+st.title("Social Media Trend Analysis Dashboard")
 
 uploaded_file = st.file_uploader("Upload Dataset", type=["csv"])
 
 if uploaded_file:
 
+    # ===============================
+    # 📊 LOAD DATA
+    # ===============================
     df = pd.read_csv(uploaded_file)
     df_original = df.copy()
 
-    # CLEAN
+    st.subheader("Raw Data")
+    st.dataframe(df.head())
+
+    # ===============================
+    # 🧹 CLEAN DATA
+    # ===============================
     df['Post_Date'] = pd.to_datetime(df['Post_Date'], errors='coerce')
     df = df.dropna()
 
+    # ===============================
+    # 📌 FEATURE ENGINEERING
+    # ===============================
     df['Total_Engagement'] = df['Likes'] + df['Shares'] + df['Comments']
 
-    # ENCODE
-    le1 = LabelEncoder()
-    le2 = LabelEncoder()
-    le3 = LabelEncoder()
-
-    df['Platform'] = le1.fit_transform(df['Platform'])
-    df['Content_Type'] = le2.fit_transform(df['Content_Type'])
-    df['Region'] = le3.fit_transform(df['Region'])
+    # ===============================
+    # 🔥 TRENDING FILTER (TOP 25%)
+    # ===============================
+    threshold = df['Total_Engagement'].quantile(0.75)
+    trending_df = df[df['Total_Engagement'] >= threshold]
 
     # ===============================
-    # K-MEANS
+    # 🔥 TOP TRENDING HASHTAGS
     # ===============================
-    features = df[['Platform','Content_Type','Region',
-                   'Views','Likes','Shares','Comments','Total_Engagement']]
+    st.subheader("🔥 Top Trending Hashtags")
 
-    scaler = StandardScaler()
-    X_scaled = scaler.fit_transform(features)
+    top_hashtags = (
+        trending_df.groupby('Hashtag')['Total_Engagement']
+        .sum()
+        .sort_values(ascending=False)
+        .reset_index()
+    )
 
-    kmeans = KMeans(n_clusters=4, random_state=42)
-    df['Cluster'] = kmeans.fit_predict(X_scaled)
-
-    # Create label
-    cluster_eng = df.groupby('Cluster')['Total_Engagement'].mean()
-    trending_cluster = cluster_eng.idxmax()
-
-    df['Trending'] = df['Cluster'].apply(lambda x: 1 if x == trending_cluster else 0)
+    st.dataframe(top_hashtags.head(10))
 
     # ===============================
-    # RANDOM FOREST
+    # 📈 TREND SCORE
     # ===============================
-    X = df[['Platform','Content_Type','Region',
-            'Views','Likes','Shares','Comments']]
+    st.subheader("Trend Score Chart")
 
-    y = df['Trending']
+    score = top_hashtags.copy()
+    score['Score'] = 100 * (score['Total_Engagement'] - score['Total_Engagement'].min()) / (
+        score['Total_Engagement'].max() - score['Total_Engagement'].min()
+    )
 
-    model = RandomForestClassifier()
-    model.fit(X, y)
-
-    # Predict
-    df['Prediction'] = model.predict(X)
-
-    # 🔥 Convert back to original values
-    df['Platform'] = df_original['Platform']
-    df['Content_Type'] = df_original['Content_Type']
-    df['Hashtag'] = df_original['Hashtag']
+    plt.figure()
+    plt.bar(score['Hashtag'].head(10), score['Score'].head(10))
+    plt.xticks(rotation=45)
+    st.pyplot(plt)
 
     # ===============================
-    # OUTPUT
+    # 📱 PLATFORM-WISE TRENDS
     # ===============================
-    st.subheader("🔥 Trending Hashtags")
-    st.write(df[df['Prediction']==1]['Hashtag'].value_counts().head(10))
+    st.subheader("📱 Platform-wise Trends")
 
-    st.subheader("📱 Best Platform")
-    st.write(df[df['Prediction']==1]['Platform'].value_counts())
+    platform_trend = (
+        trending_df.groupby(['Platform', 'Hashtag'])['Total_Engagement']
+        .sum()
+        .reset_index()
+    )
 
-    st.subheader("🎬 Best Content Type")
-    st.write(df[df['Prediction']==1]['Content_Type'].value_counts())
+    for platform in platform_trend['Platform'].unique():
+        st.write(f"### {platform}")
+        st.dataframe(
+            platform_trend[platform_trend['Platform'] == platform]
+            .sort_values(by='Total_Engagement', ascending=False)
+            .head(5)
+        )
+
+    # ===============================
+    # 🎬 BEST CONTENT TYPE
+    # ===============================
+    st.subheader("Best Content Type per Hashtag")
+
+    content_trend = (
+        trending_df.groupby(['Hashtag', 'Content_Type'])['Total_Engagement']
+        .sum()
+        .reset_index()
+    )
+
+    best_content = content_trend.sort_values(
+        ['Hashtag', 'Total_Engagement'], ascending=[True, False]
+    )
+
+    for tag in best_content['Hashtag'].unique():
+        top = best_content[best_content['Hashtag'] == tag].head(1)
+        st.write(f"{tag} → {top['Content_Type'].values[0]}")
+
+    # ===============================
+    # 📉 TREND DIRECTION
+    # ===============================
+    st.subheader("Trend Direction")
+
+    df['Month'] = df['Post_Date'].dt.month
+
+    growth = (
+        df.groupby(['Hashtag', 'Month'])['Total_Engagement']
+        .sum()
+        .reset_index()
+    )
+
+    growth['Change'] = growth.groupby('Hashtag')['Total_Engagement'].diff()
+
+    rising = growth[growth['Change'] > 0]['Hashtag'].unique()
+    falling = growth[growth['Change'] < 0]['Hashtag'].unique()
+
+    st.write("Rising Hashtags:", list(rising[:5]))
+    st.write("Falling Hashtags:", list(falling[:5]))
+
+    # ===============================
+    # 🚀 SMART INSIGHTS
+    # ===============================
+    st.subheader("Smart Insights")
+
+    for tag in top_hashtags['Hashtag'].head(5):
+
+        best_platform = (
+            platform_trend[platform_trend['Hashtag'] == tag]
+            .sort_values(by='Total_Engagement', ascending=False)
+            .iloc[0]['Platform']
+        )
+
+        best_content = (
+            content_trend[content_trend['Hashtag'] == tag]
+            .sort_values(by='Total_Engagement', ascending=False)
+            .iloc[0]['Content_Type']
+        )
+
+        st.success(f"Use {tag} on {best_platform} with {best_content}")
 
 else:
-    st.info("Upload dataset to start")
+    st.info("Upload dataset to start analysis")
