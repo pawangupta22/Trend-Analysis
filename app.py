@@ -1,16 +1,11 @@
 import streamlit as st
 import pandas as pd
-import joblib
 
-# ===============================
-# LOAD MODEL
-# ===============================
-model = joblib.load("trend_model.pkl")
-scaler = joblib.load("scaler.pkl")
+from sklearn.preprocessing import LabelEncoder, StandardScaler
+from sklearn.cluster import KMeans
+from sklearn.ensemble import RandomForestClassifier
 
-st.set_page_config(page_title="Trend Analyzer", layout="wide")
-
-st.title("🔥 Social Media Trend Prediction Dashboard")
+st.title("🔥 Trend Prediction Dashboard")
 
 uploaded_file = st.file_uploader("Upload Dataset", type=["csv"])
 
@@ -18,22 +13,13 @@ if uploaded_file:
 
     df = pd.read_csv(uploaded_file)
 
-    st.subheader("📊 Data Preview")
-    st.dataframe(df.head())
-
-    # ===============================
-    # CLEAN DATA
-    # ===============================
+    # CLEAN
     df['Post_Date'] = pd.to_datetime(df['Post_Date'], errors='coerce')
     df = df.dropna()
 
     df['Total_Engagement'] = df['Likes'] + df['Shares'] + df['Comments']
 
-    # ===============================
-    # ENCODING
-    # ===============================
-    from sklearn.preprocessing import LabelEncoder
-
+    # ENCODE
     le1 = LabelEncoder()
     le2 = LabelEncoder()
     le3 = LabelEncoder()
@@ -43,34 +29,48 @@ if uploaded_file:
     df['Region'] = le3.fit_transform(df['Region'])
 
     # ===============================
-    # PREDICTION
+    # K-MEANS
     # ===============================
-    X = df[['Platform', 'Content_Type', 'Region',
-            'Views', 'Likes', 'Shares', 'Comments']]
+    features = df[['Platform','Content_Type','Region',
+                   'Views','Likes','Shares','Comments','Total_Engagement']]
 
-    X_scaled = scaler.transform(X)
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(features)
 
+    kmeans = KMeans(n_clusters=4, random_state=42)
+    df['Cluster'] = kmeans.fit_predict(X_scaled)
+
+    # Create label
+    cluster_eng = df.groupby('Cluster')['Total_Engagement'].mean()
+    trending_cluster = cluster_eng.idxmax()
+
+    df['Trending'] = df['Cluster'].apply(lambda x: 1 if x == trending_cluster else 0)
+
+    # ===============================
+    # RANDOM FOREST
+    # ===============================
+    X = df[['Platform','Content_Type','Region',
+            'Views','Likes','Shares','Comments']]
+
+    y = df['Trending']
+
+    model = RandomForestClassifier()
+    model.fit(X, y)
+
+    # Predict
     df['Prediction'] = model.predict(X)
 
     # ===============================
-    # RESULTS
+    # OUTPUT
     # ===============================
-    st.subheader("🔮 Prediction Results")
-    st.dataframe(df[['Prediction']].head())
-
-    # ===============================
-    # TRENDING DATA
-    # ===============================
-    trending_df = df[df['Prediction'] == 1]
-
-    st.subheader("🔥 Predicted Trending Hashtags")
-    st.write(trending_df['Hashtag'].value_counts().head(10))
+    st.subheader("🔥 Trending Hashtags")
+    st.write(df[df['Prediction']==1]['Hashtag'].value_counts().head(10))
 
     st.subheader("📱 Best Platform")
-    st.write(trending_df['Platform'].value_counts().head())
+    st.write(df[df['Prediction']==1]['Platform'].value_counts())
 
     st.subheader("🎬 Best Content Type")
-    st.write(trending_df['Content_Type'].value_counts().head())
+    st.write(df[df['Prediction']==1]['Content_Type'].value_counts())
 
 else:
-    st.info("Upload a dataset to start")
+    st.info("Upload dataset to start")
