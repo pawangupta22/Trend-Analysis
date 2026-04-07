@@ -62,9 +62,9 @@ if uploaded_file:
     df['Prediction'] = model.predict(X)
 
     # 🔥 Convert back to original values
-df['Platform'] = df_original['Platform']
-df['Content_Type'] = df_original['Content_Type']
-df['Hashtag'] = df_original['Hashtag']
+    df['Platform'] = df_original['Platform']
+    df['Content_Type'] = df_original['Content_Type']
+    df['Hashtag'] = df_original['Hashtag']
 
     # ===============================
     # OUTPUT
