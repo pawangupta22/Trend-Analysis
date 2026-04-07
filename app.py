@@ -5,13 +5,14 @@ from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.cluster import KMeans
 from sklearn.ensemble import RandomForestClassifier
 
-st.title("🔥 Trend Prediction Dashboard")
+st.title("Trend Prediction Dashboard")
 
 uploaded_file = st.file_uploader("Upload Dataset", type=["csv"])
 
 if uploaded_file:
 
     df = pd.read_csv(uploaded_file)
+    df_original = df.copy()
 
     # CLEAN
     df['Post_Date'] = pd.to_datetime(df['Post_Date'], errors='coerce')
@@ -59,6 +60,11 @@ if uploaded_file:
 
     # Predict
     df['Prediction'] = model.predict(X)
+
+    # 🔥 Convert back to original values
+df['Platform'] = df_original['Platform']
+df['Content_Type'] = df_original['Content_Type']
+df['Hashtag'] = df_original['Hashtag']
 
     # ===============================
     # OUTPUT
